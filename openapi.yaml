@@ -1,0 +1,535 @@
+openapi: 3.1.0
+info:
+  title: Fasting Plan Manager API
+  description: API pre správu fasting plánu s Google Sheets integráciou. Umožňuje zaznamenávať fasting, plánovať jedlá a sledovať štatistiky.
+  version: 1.0.0
+servers:
+  - url: https://your-app-name.up.railway.app
+    description: Production server (Railway)
+  - url: http://localhost:3000
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Kontrola či API funguje
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API funguje správne
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                  service:
+                    type: string
+
+  /api/dnes:
+    get:
+      summary: Dnešný fasting plán
+      description: Vráti dnešný fasting plán (automaticky pri otvorení konverzácie)
+      operationId: getDnesnyPlan
+      responses:
+        '200':
+          description: Dnešný plán
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+
+  /api/fasting:
+    get:
+      summary: Získaj všetky fasting záznamy
+      description: Vráti všetky záznamy z Google Sheets (Fasting_Plan hárok)
+      operationId: getAllFasting
+      responses:
+        '200':
+          description: Zoznam všetkých fasting záznamov
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FastingRecord'
+    
+    post:
+      summary: Aktualizuj existujúci fasting záznam
+      description: Aktualizuje existujúci záznam v Google Sheets. Záznam musí už existovať (nie je možné pridávať nové riadky). Farba riadku sa automaticky zmení podľa stavu - Dokončený (zelená), Vynechaný (červená), Naplánovaný (žltá).
+      operationId: updateFasting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - datum
+              properties:
+                datum:
+                  type: string
+                  description: Dátum vo formáte DD.MM.YYYY
+                  example: "30.10.2025"
+                typFastingu:
+                  type: string
+                  description: Typ fastingu
+                  example: "16:8"
+                  enum: ["16:8", "18:6", "20:4", "24h", "Voľný deň"]
+                casZaciatku:
+                  type: string
+                  description: Čas začiatku vo formáte HH:MM
+                  example: "20:00"
+                casKonca:
+                  type: string
+                  description: Čas konca vo formáte HH:MM
+                  example: "12:00"
+                dlzkaFastingu:
+                  type: string
+                  description: Dĺžka v hodinách
+                  example: "16"
+                stav:
+                  type: string
+                  enum: ["Naplánovaný", "Dokončený", "Vynechaný"]
+                  example: "Dokončený"
+                hmotnost:
+                  type: string
+                  description: Hmotnosť v kg (slovenský formát s čiarkou)
+                  example: "78,5"
+                energia:
+                  type: string
+                  description: Energia/pocit (1-10)
+                  example: "8"
+                poznamka:
+                  type: string
+                  description: Poznámka
+                  example: "Cítim sa výborne!"
+      responses:
+        '200':
+          description: Záznam bol úspešne aktualizovaný
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/FastingRecord'
+        '404':
+          description: Dátum nebol nájdený v pláne (riadok musí už existovať v Google Sheets)
+
+  /api/fasting/{datum}:
+    get:
+      summary: Získaj detail fasting dňa
+      description: Vráti detail záznamu pre konkrétny dátum
+      operationId: getFastingByDate
+      parameters:
+        - name: datum
+          in: path
+          required: true
+          description: Dátum vo formáte DD.MM.YYYY
+          schema:
+            type: string
+          example: "30.10.2025"
+      responses:
+        '200':
+          description: Detail záznamu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/FastingRecord'
+        '404':
+          description: Záznam nebol nájdený
+
+  /api/oznac-den:
+    post:
+      summary: Označ deň ako splnený/nesplnený
+      description: Jednoduchý endpoint pre ChatGPT na označenie dňa. Ak splnene=true, nastaví stav na Dokončený a farbu na zelenú. Ak splnene=false, nastaví stav na Vynechaný a farbu na červenú. Perfektné pre večerný check-in.
+      operationId: oznacDen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - datum
+                - splnene
+              properties:
+                datum:
+                  type: string
+                  description: Dátum vo formáte DD.MM.YYYY
+                  example: "30.10.2025"
+                splnene:
+                  type: boolean
+                  description: True = splnené (zelená), False = nesplnené (červená)
+                  example: true
+                hmotnost:
+                  type: string
+                  description: Hmotnosť v kg (slovenský formát s čiarkou)
+                  example: "78,5"
+                energia:
+                  type: string
+                  description: Energia/pocit (1-10)
+                  example: "8"
+                poznamka:
+                  type: string
+                  description: Poznámka
+                  example: "Výborne som to zvládol!"
+      responses:
+        '200':
+          description: Deň bol úspešne označený a farba zmenená
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "✅ Gratulujem! Deň 30.10.2025 bol označený ako splnený (zelená)"
+                  data:
+                    type: object
+                    properties:
+                      datum:
+                        type: string
+                      stav:
+                        type: string
+                        enum: ["Dokončený", "Vynechaný"]
+                      splnene:
+                        type: boolean
+                      farba:
+                        type: string
+                        example: "zelená 🟢"
+        '404':
+          description: Dátum nebol nájdený v pláne
+
+  /api/jedlo:
+    get:
+      summary: Získaj všetky plánované jedlá
+      description: Vráti všetky plánované jedlá z Google Sheets (Planovane_Jedlo hárok)
+      operationId: getAllJedlo
+      responses:
+        '200':
+          description: Zoznam plánovaných jedál
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JedloRecord'
+    
+    post:
+      summary: Pridaj plánované jedlo
+      description: Pridá nové jedlo do plánu
+      operationId: createJedlo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - datum
+                - casJedla
+                - typJedla
+                - nazovJedla
+              properties:
+                datum:
+                  type: string
+                  description: Dátum vo formáte DD.MM.YYYY
+                  example: "30.10.2025"
+                casJedla:
+                  type: string
+                  description: Čas jedla vo formáte HH:MM
+                  example: "13:00"
+                typJedla:
+                  type: string
+                  enum: ["Raňajky", "Obed", "Večera", "Snack"]
+                  example: "Obed"
+                nazovJedla:
+                  type: string
+                  description: Názov jedla
+                  example: "Kuracie prsia s ryžou"
+                kalorie:
+                  type: string
+                  description: Kalórie v kcal
+                  example: "650"
+                bielkoviny:
+                  type: string
+                  description: Bielkoviny v gramoch
+                  example: "45"
+                sacharidy:
+                  type: string
+                  description: Sacharidy v gramoch
+                  example: "60"
+                tuky:
+                  type: string
+                  description: Tuky v gramoch
+                  example: "15"
+                poznamka:
+                  type: string
+                  description: Poznámka
+                  example: "S brokolicou"
+      responses:
+        '200':
+          description: Jedlo bolo úspešne pridané
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/JedloRecord'
+
+  /api/statistiky:
+    get:
+      summary: Získaj celkové štatistiky
+      description: Vráti celkové štatistiky fastingu (úspešnosť, priemerná dĺžka, trend hmotnosti)
+      operationId: getStatistiky
+      responses:
+        '200':
+          description: Celkové štatistiky
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      celkemZaznamov:
+                        type: integer
+                      dokoncene:
+                        type: integer
+                      vynechane:
+                        type: integer
+                      naplanovane:
+                        type: integer
+                      uspesnost:
+                        type: string
+                      celkoveHodinyFastingu:
+                        type: string
+                      priemernaDelkaFastingu:
+                        type: string
+                      trendHmotnosti:
+                        type: string
+                      aktualnaHmotnost:
+                        type: string
+
+  /api/analytics/tyzdenne:
+    get:
+      summary: Týždenný prehľad
+      description: Štatistiky za aktuálny týždeň
+      operationId: getTyzdenneAnalytics
+      responses:
+        '200':
+          description: Týždenné štatistiky
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  obdobie:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      celkemDni:
+                        type: integer
+                      dokoncentychDni:
+                        type: integer
+                      celkoveHodinyFastingu:
+                        type: string
+                      priemernaDelka:
+                        type: string
+                      uspesnost:
+                        type: string
+
+  /api/analytics/mesacne:
+    get:
+      summary: Mesačný prehľad
+      description: Štatistiky za aktuálny mesiac
+      operationId: getMesacneAnalytics
+      responses:
+        '200':
+          description: Mesačné štatistiky
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  obdobie:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      celkemDni:
+                        type: integer
+                      dokoncentychDni:
+                        type: integer
+                      celkoveHodinyFastingu:
+                        type: string
+                      priemernaDelka:
+                        type: string
+                      uspesnost:
+                        type: string
+                      najdlhsiFasting:
+                        type: string
+                      najdlhsiDen:
+                        type: string
+
+  /api/analytics/hmotnost:
+    get:
+      summary: Trend hmotnosti
+      description: Vráti trend hmotnosti s históriou meraní
+      operationId: getHmotnostTrend
+      responses:
+        '200':
+          description: Trend hmotnosti
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      pocetMerani:
+                        type: integer
+                      prvaHmotnost:
+                        type: string
+                      prveMeranie:
+                        type: string
+                      aktualnaHmotnost:
+                        type: string
+                      posledneméranie:
+                        type: string
+                      zmena:
+                        type: string
+                      zmenaPercent:
+                        type: string
+                      trend:
+                        type: string
+                      historie:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            datum:
+                              type: string
+                            hmotnost:
+                              type: string
+
+components:
+  schemas:
+    FastingRecord:
+      type: object
+      properties:
+        datum:
+          type: string
+          description: Dátum (DD.MM.YYYY)
+        denVTyzdni:
+          type: string
+          description: Deň v týždni
+        typFastingu:
+          type: string
+          description: Typ fastingu
+        casZaciatku:
+          type: string
+          description: Čas začiatku (HH:MM)
+        casKonca:
+          type: string
+          description: Čas konca (HH:MM)
+        dlzkaFastingu:
+          type: string
+          description: Dĺžka fastingu v hodinách
+        stav:
+          type: string
+          description: Stav
+        hmotnost:
+          type: string
+          description: Hmotnosť ráno (kg)
+        energia:
+          type: string
+          description: Energia/pocit (1-10)
+        poznamka:
+          type: string
+          description: Poznámka
+
+    JedloRecord:
+      type: object
+      properties:
+        datum:
+          type: string
+          description: Dátum (DD.MM.YYYY)
+        casJedla:
+          type: string
+          description: Čas jedla (HH:MM)
+        typJedla:
+          type: string
+          description: Typ jedla
+        nazovJedla:
+          type: string
+          description: Názov jedla
+        kalorie:
+          type: string
+          description: Kalórie (kcal)
+        bielkoviny:
+          type: string
+          description: Bielkoviny (g)
+        sacharidy:
+          type: string
+          description: Sacharidy (g)
+        tuky:
+          type: string
+          description: Tuky (g)
+        poznamka:
+          type: string
+          description: Poznámka
+
+
