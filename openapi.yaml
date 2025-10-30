@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Fasting Plan Manager API
-  description: API pre správu fasting plánu s Google Sheets integráciou. Umožňuje zaznamenávať fasting, plánovať jedlá a sledovať štatistiky.
-  version: 1.0.0
+  description: API pre správu fasting plánu s Google Sheets integráciou. Umožňuje zaznamenávať fasting, plánovať jedlá a sledovať štatistiky. Podporuje vlastnú štruktúru Google Sheets s ISO formátom dátumov.
+  version: 2.0.0
 servers:
-  - url: https://your-app-name.up.railway.app
+  - url: https://fasting-plan-eating-production.up.railway.app
     description: Production server (Railway)
   - url: http://localhost:3000
     description: Local development server
@@ -33,7 +33,7 @@ paths:
   /api/dnes:
     get:
       summary: Dnešný fasting plán
-      description: Vráti dnešný fasting plán (automaticky pri otvorení konverzácie)
+      description: Vráti dnešný fasting plán (automaticky pri otvorení konverzácie). API automaticky konvertuje ISO formát dátumov (2025-10-30) na slovenský formát (30.10.2025).
       operationId: getDnesnyPlan
       responses:
         '200':
@@ -472,34 +472,37 @@ components:
       properties:
         datum:
           type: string
-          description: Dátum (DD.MM.YYYY)
+          description: Dátum (DD.MM.YYYY) - konvertované z ISO formátu
         denVTyzdni:
           type: string
           description: Deň v týždni
         typFastingu:
           type: string
-          description: Typ fastingu
+          description: Typ dňa/fastingu (napr. "Dlhý deň 18 h", "Bežný 16/8")
         casZaciatku:
           type: string
-          description: Čas začiatku (HH:MM)
+          description: Čas posledného jedla (HH:MM)
         casKonca:
           type: string
-          description: Čas konca (HH:MM)
+          description: Čas prvého jedla nasledujúci deň (HH:MM)
         dlzkaFastingu:
           type: string
-          description: Dĺžka fastingu v hodinách
+          description: Plánovaná dĺžka fastingu (napr. "18", "14-16")
         stav:
           type: string
-          description: Stav
+          description: Stav (Naplánovaný/Dokončený/Vynechaný)
         hmotnost:
           type: string
-          description: Hmotnosť ráno (kg)
+          description: Hmotnosť ráno (kg) - zatiaľ nepodporované
         energia:
           type: string
-          description: Energia/pocit (1-10)
+          description: Energia/pocit (1-10) - zatiaľ nepodporované
         poznamka:
           type: string
-          description: Poznámka
+          description: Poznámka k danému dňu
+        jedalnícek:
+          type: string
+          description: Plánovaný jedálniček na daný deň
 
     JedloRecord:
       type: object
