@@ -51,6 +51,20 @@ function parseDatumSK(datumStr) {
   return parse(datumStr, 'dd.MM.yyyy', new Date());
 }
 
+// Konverzia ISO dátumu (2025-10-30) na slovenský formát (30.10.2025)
+function convertISOtoSK(isoDate) {
+  if (!isoDate) return '';
+  const date = parseISO(isoDate);
+  return format(date, 'dd.MM.yyyy');
+}
+
+// Konverzia slovenského formátu na ISO
+function convertSKtoISO(skDate) {
+  if (!skDate) return '';
+  const date = parseDatumSK(skDate);
+  return format(date, 'yyyy-MM-dd');
+}
+
 function formatCasSK(date) {
   return format(date, 'HH:mm');
 }
@@ -172,16 +186,16 @@ app.get('/api/fasting', async (req, res) => {
 
     const rows = response.data.values || [];
     const zaznamy = rows.map(row => ({
-      datum: row[0] || '',
+      datum: convertISOtoSK(row[0]) || '', // Konverzia 2025-10-30 -> 30.10.2025
       denVTyzdni: row[1] || '',
-      typFastingu: row[2] || '',
-      casZaciatku: row[3] || '',
-      casKonca: row[4] || '',
-      dlzkaFastingu: row[5] || '',
-      stav: row[6] || '',
-      hmotnost: row[7] || '',
-      energia: row[8] || '',
-      poznamka: row[9] || ''
+      typFastingu: row[2] || '', // Typ dňa
+      casZaciatku: row[3] || '', // Posledné jedlo
+      casKonca: row[4] ? row[4].split(' ')[1] : '', // Prvé jedlo (iba čas)
+      dlzkaFastingu: row[5] || '', // Plánovaný pôst
+      stav: 'Naplánovaný', // Default stav
+      hmotnost: '', // Zatiaľ nepodporované
+      energia: '', // Zatiaľ nepodporované
+      poznamka: row[8] || ''
     }));
 
     res.json({
@@ -759,7 +773,8 @@ app.get('/api/analytics/hmotnost', async (req, res) => {
 // GET /api/dnes - Dnešný fasting plán
 app.get('/api/dnes', async (req, res) => {
   try {
-    const dnes = formatDatumSK(new Date());
+    const dnes = formatDatumSK(new Date()); // 30.10.2025
+    const dnesISO = format(new Date(), 'yyyy-MM-dd'); // 2025-10-30
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -767,7 +782,8 @@ app.get('/api/dnes', async (req, res) => {
     });
 
     const rows = response.data.values || [];
-    const zaznam = rows.find(row => row[0] === dnes);
+    // Hľadaj podľa ISO formátu (ako máte v Sheets)
+    const zaznam = rows.find(row => row[0] === dnesISO);
 
     if (!zaznam) {
       return res.json({
@@ -784,16 +800,17 @@ app.get('/api/dnes', async (req, res) => {
       success: true,
       data: {
         existuje: true,
-        datum: zaznam[0] || '',
+        datum: convertISOtoSK(zaznam[0]) || '', // Konverzia na SK formát
         denVTyzdni: zaznam[1] || '',
-        typFastingu: zaznam[2] || '',
-        casZaciatku: zaznam[3] || '',
-        casKonca: zaznam[4] || '',
-        dlzkaFastingu: zaznam[5] || '',
-        stav: zaznam[6] || '',
-        hmotnost: zaznam[7] || '',
-        energia: zaznam[8] || '',
-        poznamka: zaznam[9] || ''
+        typFastingu: zaznam[2] || '', // Typ dňa
+        casZaciatku: zaznam[3] || '', // Posledné jedlo
+        casKonca: zaznam[4] ? zaznam[4].split(' ')[1] : '', // Prvé jedlo (iba čas)
+        dlzkaFastingu: zaznam[5] || '', // Plánovaný pôst
+        stav: 'Naplánovaný', // Default
+        hmotnost: '',
+        energia: '',
+        poznamka: zaznam[8] || '',
+        jedalnícek: zaznam[9] || '' // Jedálniček
       }
     });
   } catch (error) {
@@ -816,6 +833,9 @@ app.post('/api/oznac-den', [
 ], validate, async (req, res) => {
   try {
     const { datum, splnene, hmotnost, energia, poznamka } = req.body;
+    
+    // Konverzia SK formátu (30.10.2025) na ISO (2025-10-30) pre hľadanie
+    const datumISO = convertSKtoISO(datum);
 
     // Získaj existujúci záznam
     const response = await sheets.spreadsheets.values.get({
@@ -824,7 +844,7 @@ app.post('/api/oznac-den', [
     });
 
     const rows = response.data.values || [];
-    const existingIndex = rows.findIndex(row => row[0] === datum);
+    const existingIndex = rows.findIndex(row => row[0] === datumISO);
 
     if (existingIndex === -1) {
       return res.status(404).json({
@@ -838,18 +858,12 @@ app.post('/api/oznac-den', [
     // Nastav stav podľa splnene
     const stav = splnene ? 'Dokončený' : 'Vynechaný';
     
-    const updatedRow = [
-      datum,
-      existingRow[1],
-      existingRow[2],
-      existingRow[3],
-      existingRow[4],
-      existingRow[5],
-      stav,
-      hmotnost !== undefined ? hmotnost : existingRow[7] || '',
-      energia !== undefined ? energia : existingRow[8] || '',
-      poznamka !== undefined ? poznamka : existingRow[9] || ''
-    ];
+    // Neupravujeme nič okrem stavu a poznámky
+    // Zachovávame originálnu štruktúru Sheets
+    const updatedRow = existingRow.slice(); // Kópia existujúceho riadku
+    if (poznamka !== undefined) {
+      updatedRow[8] = poznamka; // Stĺpec I (Poznámka)
+    }
 
     // Aktualizuj riadok
     await sheets.spreadsheets.values.update({
@@ -870,8 +884,8 @@ app.post('/api/oznac-den', [
         ? `✅ Gratulujem! Deň ${datum} bol označený ako splnený (zelená)` 
         : `❌ Deň ${datum} bol označený ako nesplnený (červená)`,
       data: {
-        datum: updatedRow[0],
-        stav: updatedRow[6],
+        datum: datum,
+        stav: stav,
         splnene,
         farba: splnene ? 'zelená 🟢' : 'červená 🔴'
       }
