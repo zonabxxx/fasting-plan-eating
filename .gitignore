@@ -1,8 +1,10 @@
 # Sensitive files
 .env
-*.json
 credentials_base64.txt
 fasting-projekt-*.json
+
+# Allow package.json but ignore other credential JSON files
+!package.json
 
 # Node modules
 node_modules/
